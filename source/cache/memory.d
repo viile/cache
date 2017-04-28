@@ -2,29 +2,30 @@ module cache.memory;
 
 import cache;
 
-import std.experimental.allocator.gc_allocator;
+import std.stdio;
+import core.memory;
 
 class BufferTrunk
 {
 	string key;
 	ulong length;
-	void[] ptr;
-	BufferTrunk* next;
+	ubyte[] *ptr;
+	BufferTrunk next;
 	this(string key,ubyte[] value,ulong length)
 	{
 		this.key = key;
 		this.length = length;
-		ptr = GCAllocator.instance.allocate(length);
-		ptr = value;
+		ptr = cast(ubyte[] *)GC.malloc(length);
+		*ptr = value;
 	}
 	void destroy()
 	{
 		length = 0;
-		GCAllocator.instance.deallocate(ptr);
+		GC.free(ptr);
 	}
 	~this()
 	{
-		if(length)GCAllocator.instance.deallocate(ptr);
+		if(length)GC.free(ptr);
 	}
 }
 
@@ -32,9 +33,9 @@ class Memory
 {
 	ulong trunkNum;
 	ulong trunkSize;
-	BufferTrunk*[string] map;
-	BufferTrunk* head;
-	BufferTrunk* tail;
+	BufferTrunk[string] map;
+	BufferTrunk head;
+	BufferTrunk tail;
 
 	this()
 	{
@@ -56,21 +57,22 @@ class Memory
 	{
 		if(check(key))return false;
 		BufferTrunk trunk = new BufferTrunk(key,value,value.length);
-		map[key] = &trunk;
+		map[key] = trunk;
 		trunkNum++;
 		trunkSize+=value.length;
-		if(head == null){
-			head = &trunk;
-			tail = &trunk;
+		if(head is BufferTrunk.init){
+			head = trunk;
+			tail = trunk;
 		}else{
-			tail.next = &trunk;
-			tail = &trunk;
+			tail.next = trunk;
+			tail = trunk;
 		}
 		return true;
 	}
-	ubyte[] get(string key)
+	ubyte[]  get(string key)
 	{
-		return null;
+		if(!check(key))return null;
+		return *(map[key].ptr);
 	}
 	bool isset(string key)
 	{
@@ -88,15 +90,20 @@ class Memory
 
 unittest
 {
+	import std.stdio;
 	Memory memory = new Memory();
 	string test = "test";
 	ubyte[] utest = cast(ubyte[])test;
-	memory.set("test",utest);
+	writeln(utest);
+	memory.set(test,utest);
 	assert(memory.trunkNum == 1);
 	assert(memory.trunkSize == utest.length);
+	writeln(memory.get(test));
+	assert(memory.get(test) == utest);
 	string test2 = "testasdfasjdflkjaklsdjfl";
 	ubyte[] utest2 = cast(ubyte[])test2;
-	memory.set("test2",utest2);
+	memory.set(test2,utest2);
 	assert(memory.trunkNum == 2);
 	assert(memory.trunkSize == utest.length + utest2.length);
+	assert(memory.get(test2) == utest2);
 }
