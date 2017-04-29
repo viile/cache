@@ -10,6 +10,7 @@ class BufferTrunk
 	string key;
 	ulong length;
 	ubyte[] *ptr;
+	BufferTrunk prv;
 	BufferTrunk next;
 	this(string key,ubyte[] value,ulong length)
 	{
@@ -18,7 +19,7 @@ class BufferTrunk
 		ptr = cast(ubyte[] *)GC.malloc(length);
 		*ptr = value;
 	}
-	void destroy()
+	void clean()
 	{
 		length = 0;
 		GC.free(ptr);
@@ -29,33 +30,32 @@ class BufferTrunk
 	}
 }
 
-class Memory
+class Memory : Store
 {
-	ulong trunkNum;
-	ulong trunkSize;
-	BufferTrunk[string] map;
-	BufferTrunk head;
-	BufferTrunk tail;
+	private ulong trunkNum;
+	private ulong trunkSize;
+	private BufferTrunk[string] map;
+	private BufferTrunk head;
+	private BufferTrunk tail;
 
 	this()
 	{
-	
 	}
 	
 	~this()
 	{
-	
 	}
-	bool check(string key)
+	ulong getTrunkNum()
 	{
-		foreach(k,v;map){
-			if(key == k)return true;
-		}
-		return false;
+		return trunkNum;
 	}
-	bool set(string key,ubyte[] value)
+	ulong getTrunkSize()
 	{
-		if(check(key))return false;
+		return trunkSize;
+	}
+	override bool set(string key,ubyte[] value)
+	{
+		if(isset(key))return false;
 		BufferTrunk trunk = new BufferTrunk(key,value,value.length);
 		map[key] = trunk;
 		trunkNum++;
@@ -65,26 +65,45 @@ class Memory
 			tail = trunk;
 		}else{
 			tail.next = trunk;
+			trunk.prv = tail;
 			tail = trunk;
 		}
 		return true;
 	}
-	ubyte[]  get(string key)
+	override ubyte[]  get(string key)
 	{
-		if(!check(key))return null;
-		return *(map[key].ptr);
+		return map.get(key,null) ? *(map[key].ptr) : null;
 	}
-	bool isset(string key)
+	override bool isset(string key)
 	{
-		return false;
+		if(map.get(key,null) is null) 
+			return false;
+		return true;
 	}
-	bool remove(string key)
+	override bool remove(string key)
 	{
-		return false;
+		if(!isset(key))return true;
+		if(map[key].prv)map[key].prv.next = map[key].next;
+		if(map[key].next)map[key].next.prv = map[key].prv;
+		trunkNum--;
+		trunkSize-=map[key].length;
+		map[key].clean();
+		map[key].destroy();
+		map.remove(key);
+		return true;
 	}
-	void clean()
+	override void clean()
 	{
-	
+		foreach(k,v;map){
+			v.clean();
+			v.destroy();
+			map.remove(k);
+		}
+		map.destroy();
+		trunkNum = 0;
+		trunkSize = 0;
+		head = null;
+		tail = null;
 	}
 }
 
@@ -94,16 +113,20 @@ unittest
 	Memory memory = new Memory();
 	string test = "test";
 	ubyte[] utest = cast(ubyte[])test;
-	writeln(utest);
 	memory.set(test,utest);
-	assert(memory.trunkNum == 1);
-	assert(memory.trunkSize == utest.length);
-	writeln(memory.get(test));
+	assert(memory.getTrunkNum == 1);
+	assert(memory.getTrunkSize == utest.length);
 	assert(memory.get(test) == utest);
 	string test2 = "testasdfasjdflkjaklsdjfl";
 	ubyte[] utest2 = cast(ubyte[])test2;
 	memory.set(test2,utest2);
-	assert(memory.trunkNum == 2);
-	assert(memory.trunkSize == utest.length + utest2.length);
+	assert(memory.getTrunkNum == 2);
+	assert(memory.getTrunkSize == utest.length + utest2.length);
 	assert(memory.get(test2) == utest2);
+	assert(memory.get("testsdfadf") == null);
+	memory.remove(test2);
+	assert(memory.getTrunkNum == 1);
+	assert(memory.getTrunkSize == utest.length);
+	memory.clean();
+	assert(memory.getTrunkNum == 0);
 }
