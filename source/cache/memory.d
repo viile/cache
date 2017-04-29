@@ -37,13 +37,16 @@ class Memory : Store
 	private BufferTrunk[string] map;
 	private BufferTrunk head;
 	private BufferTrunk tail;
+	private ReadWriteMutex _mutex;
 
 	this()
 	{
+		_mutex = new ReadWriteMutex();
 	}
-	
+
 	~this()
 	{
+		_mutex.destroy();
 	}
 	ulong getTrunkNum()
 	{
@@ -56,6 +59,8 @@ class Memory : Store
 	override bool set(string key,ubyte[] value)
 	{
 		if(isset(key))return false;
+		_mutex.writer.lock();
+		scope(exit) _mutex.writer.unlock();
 		BufferTrunk trunk = new BufferTrunk(key,value,value.length);
 		map[key] = trunk;
 		trunkNum++;
@@ -72,6 +77,8 @@ class Memory : Store
 	}
 	override ubyte[]  get(string key)
 	{
+		_mutex.reader.lock();
+		scope(exit) _mutex.reader.unlock();
 		return map.get(key,null) ? *(map[key].ptr) : null;
 	}
 	override bool isset(string key)
@@ -82,6 +89,8 @@ class Memory : Store
 	}
 	override bool remove(string key)
 	{
+		_mutex.writer.lock();
+		scope(exit) _mutex.writer.unlock();
 		if(!isset(key))return true;
 		if(map[key].prv)map[key].prv.next = map[key].next;
 		if(map[key].next)map[key].next.prv = map[key].prv;
